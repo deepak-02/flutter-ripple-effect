@@ -31,6 +31,7 @@ class _RippleScreenState extends State<RippleScreen> with SingleTickerProviderSt
   ui.Image? _backgroundImage;
   late AnimationController _controller;
   final List<Ripple> _ripples = [];
+  Offset? _lastDragPosition;
 
   @override
   void initState() {
@@ -43,8 +44,8 @@ class _RippleScreenState extends State<RippleScreen> with SingleTickerProviderSt
     )..addListener(() {
       setState(() {
         for (var r in _ripples) {
-          r.radius += 0.005;
-          r.intensity = (r.intensity - 0.01).clamp(0.0, 1.0);
+          r.radius += 0.005; // Speed of the expanding ripple
+          r.intensity = (r.intensity - 0.01).clamp(0.0, 1.0); // Fade speed
         }
         _ripples.removeWhere((r) => r.intensity <= 0);
       });
@@ -57,8 +58,9 @@ class _RippleScreenState extends State<RippleScreen> with SingleTickerProviderSt
   Future<void> _loadResources() async {
     final program = await FragmentProgram.fromAsset('shaders/ripple.frag');
 
-    // Replace this URL with whatever image you want
-    final image = await _fetchNetworkImage('https://images.unsplash.com/photo-1587591389045-7486f45d1dbb?q=80&w=987&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D');
+    // Replace this URL with your desired background image
+    final image = await _fetchNetworkImage(
+        'https://images.unsplash.com/photo-1587591389045-7486f45d1dbb?q=80&w=987&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D');
 
     if (mounted) {
       setState(() {
@@ -84,9 +86,28 @@ class _RippleScreenState extends State<RippleScreen> with SingleTickerProviderSt
 
   void _addRipple(Offset position) {
     if (_ripples.length >= 5) {
-      _ripples.removeAt(0);
+      _ripples.removeAt(0); // Remove the oldest ripple if we hit the limit
     }
     _ripples.add(Ripple(position));
+  }
+
+  // Handle dragging with a distance threshold for smooth trails
+  void _handlePanUpdate(DragUpdateDetails details) {
+    final position = details.localPosition;
+
+    if (_lastDragPosition != null) {
+      // Only drop a new ripple if the finger has moved at least 40 pixels
+      if ((position - _lastDragPosition!).distance < 40.0) {
+        return;
+      }
+    }
+
+    _lastDragPosition = position;
+    _addRipple(position);
+  }
+
+  void _handlePanEnd(DragEndDetails details) {
+    _lastDragPosition = null; // Reset tracker when finger lifts
   }
 
   @override
@@ -100,15 +121,19 @@ class _RippleScreenState extends State<RippleScreen> with SingleTickerProviderSt
     }
 
     return GestureDetector(
-      onPanUpdate: (details) => _addRipple(details.localPosition),
-      onTapDown: (details) => _addRipple(details.localPosition),
+      onPanUpdate: _handlePanUpdate,
+      onPanEnd: _handlePanEnd,
+      onTapDown: (details) {
+        _lastDragPosition = details.localPosition;
+        _addRipple(details.localPosition);
+      },
       child: Scaffold(
         body: CustomPaint(
           size: Size.infinite,
           painter: ShaderRipplePainter(
             _program!.fragmentShader(),
             _ripples,
-            _backgroundImage!, // Pass the loaded image down
+            _backgroundImage!,
           ),
         ),
       ),
